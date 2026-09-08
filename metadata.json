@@ -1,0 +1,6 @@
+{
+  "name": "GLACIERGUARD AI",
+  "description": "AI-Powered Early Warning and Impact Prediction System for Glacier-Triggered Floods and Debris Flows",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

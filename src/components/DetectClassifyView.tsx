@@ -10,7 +10,7 @@ import {
   HelpCircle,
   RefreshCw,
 } from 'lucide-react';
-import { AIClassificationResult, SensorTelemetry } from '../types';
+import { AIClassificationResult, SensorTelemetry, User } from '../types';
 
 const DEFAULT_TELEMETRY: SensorTelemetry = {
   timestamp: new Date().toISOString(),
@@ -46,6 +46,7 @@ interface DetectClassifyViewProps {
   telemetry?: SensorTelemetry;
   onReanalyzeWithAI: () => Promise<void>;
   isLoadingAI: boolean;
+  currentUser?: User | null;
 }
 
 export const DetectClassifyView: React.FC<DetectClassifyViewProps> = ({
@@ -53,10 +54,13 @@ export const DetectClassifyView: React.FC<DetectClassifyViewProps> = ({
   telemetry: incomingTelemetry,
   onReanalyzeWithAI,
   isLoadingAI,
+  currentUser,
 }) => {
   const telemetry = incomingTelemetry || DEFAULT_TELEMETRY;
   const classification = incomingClassification || DEFAULT_CLASSIFICATION;
   const isAnomalous = (classification?.riskScore ?? 0) > 30;
+  const isCitizen = currentUser?.role === 'public';
+  const isHydrologist = currentUser?.role === 'hydrologist';
 
   const CANONICAL_HAZARD_TYPES = [
     {
@@ -97,9 +101,18 @@ export const DetectClassifyView: React.FC<DetectClassifyViewProps> = ({
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-cyan-950 text-cyan-400 border border-cyan-800">
                 STEP 2 & 3 — DETECT & CLASSIFY
+              </span>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase ${
+                isCitizen
+                  ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                  : isHydrologist
+                  ? 'bg-purple-950 text-purple-300 border-purple-800'
+                  : 'bg-slate-800 text-slate-300 border-slate-700'
+              }`}>
+                {currentUser?.role ? `${currentUser.role.toUpperCase()} MODE` : 'OPERATIONAL VIEW'}
               </span>
               <h2 className="text-lg font-bold text-white">Multi-Sensor Anomaly Detection & AI Hazard Classification</h2>
             </div>
@@ -115,7 +128,7 @@ export const DetectClassifyView: React.FC<DetectClassifyViewProps> = ({
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-md shadow-cyan-950 transition-all flex-shrink-0 disabled:opacity-50"
           >
             {isLoadingAI ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 text-cyan-200" />}
-            <span>{isLoadingAI ? 'Analyzing with Gemini...' : 'Analyze with Gemini AI'}</span>
+            <span>{isLoadingAI ? 'Analyzing with Gemini...' : isHydrologist ? 'Recalibrate with Gemini AI' : 'Analyze with Gemini AI'}</span>
           </button>
         </div>
       </div>

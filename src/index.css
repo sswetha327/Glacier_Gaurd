@@ -1,1 +1,130 @@
 @import "tailwindcss";
+
+@theme {
+  --color-forest: #244A38;
+  --color-mountain: #386B4A;
+  --color-olive: #737C45;
+  --color-earth: #795548;
+  --color-sand: #D8C3A5;
+  --color-warm-white: #F5F1E8;
+
+  --color-page: #F5F1E8;
+  --color-card: #FFFCF6;
+  --color-secondary-section: #E9E2D5;
+  --color-divider: #C9C0B1;
+
+  --color-safety-orange: #F47721;
+  --color-safety-hover: #D95F12;
+  --color-safety-light: #FCE8D8;
+
+  --color-main-text: #26352C;
+  --color-sub-text: #657067;
+}
+
+:root {
+  --color-forest: #244A38;
+  --color-mountain: #386B4A;
+  --color-olive: #737C45;
+  --color-earth: #795548;
+  --color-sand: #D8C3A5;
+  --color-warm-white: #F5F1E8;
+
+  --color-page: #F5F1E8;
+  --color-card: #FFFCF6;
+  --color-secondary-section: #E9E2D5;
+  --color-divider: #C9C0B1;
+
+  --color-safety-orange: #F47721;
+  --color-safety-hover: #D95F12;
+  --color-safety-light: #FCE8D8;
+
+  --color-main-text: #26352C;
+  --color-sub-text: #657067;
+}
+
+body {
+  background-color: #F5F1E8;
+  color: #26352C;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+/* Custom Earth-tone & Safety Orange Utility Classes */
+.bg-forest { background-color: #244A38 !important; color: #FFFFFF !important; }
+.text-forest { color: #244A38 !important; }
+.border-forest { border-color: #244A38 !important; }
+
+.bg-mountain { background-color: #386B4A !important; color: #FFFFFF !important; }
+.text-mountain { color: #386B4A !important; }
+.border-mountain { border-color: #386B4A !important; }
+
+.bg-olive { background-color: #737C45 !important; color: #FFFFFF !important; }
+.text-olive { color: #737C45 !important; }
+.border-olive { border-color: #737C45 !important; }
+
+.bg-earth { background-color: #795548 !important; color: #FFFFFF !important; }
+.text-earth { color: #795548 !important; }
+.border-earth { border-color: #795548 !important; }
+
+.bg-sand { background-color: #D8C3A5 !important; color: #26352C !important; }
+.text-sand { color: #795548 !important; }
+.border-sand { border-color: #D8C3A5 !important; }
+
+.bg-page { background-color: #F5F1E8 !important; }
+.bg-card { background-color: #FFFCF6 !important; }
+.bg-secondary-section { background-color: #E9E2D5 !important; }
+.border-divider { border-color: #C9C0B1 !important; }
+
+.text-main { color: #26352C !important; }
+.text-secondary { color: #657067 !important; }
+
+.bg-orange-primary { background-color: #F47721 !important; color: #FFFFFF !important; }
+.bg-orange-hover:hover { background-color: #D95F12 !important; }
+.bg-orange-light { background-color: #FCE8D8 !important; color: #26352C !important; }
+.text-orange-primary { color: #F47721 !important; }
+.border-orange-primary { border-color: #F47721 !important; }
+
+.btn-orange {
+  background-color: #F47721 !important;
+  color: #FFFFFF !important;
+  transition: background-color 0.15s ease-in-out;
+}
+.btn-orange:hover {
+  background-color: #D95F12 !important;
+}
+
+.btn-forest {
+  background-color: #244A38 !important;
+  color: #FFFFFF !important;
+  transition: background-color 0.15s ease-in-out;
+}
+.btn-forest:hover {
+  background-color: #386B4A !important;
+}
+
+.btn-mountain {
+  background-color: #386B4A !important;
+  color: #FFFFFF !important;
+  transition: background-color 0.15s ease-in-out;
+}
+.btn-mountain:hover {
+  background-color: #244A38 !important;
+}
+
+/* Custom scrollbars matching earth tones */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #E9E2D5;
+}
+::-webkit-scrollbar-thumb {
+  background: #C9C0B1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #737C45;
+}

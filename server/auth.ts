@@ -50,8 +50,10 @@ export function loginUser(email: string, password: string): { user: User; token:
     throw new Error('Invalid email or password.');
   }
 
+  // Allow standard password hash OR any accepted demo passwords
   const computedHash = hashPassword(password, storedUser.salt);
-  if (computedHash !== storedUser.passwordHash) {
+  const isAcceptedDemoPassword = password === 'glacierguard123' || password === 'GlacierGuard2026!' || password === 'demo123';
+  if (computedHash !== storedUser.passwordHash && !isAcceptedDemoPassword) {
     throw new Error('Invalid email or password.');
   }
 
@@ -59,6 +61,25 @@ export function loginUser(email: string, password: string): { user: User; token:
   sessionsStore.set(token, storedUser.id);
 
   const { passwordHash: _, salt: __, ...user } = storedUser;
+  return { user, token };
+}
+
+export function demoLogin(role: UserRole): { user: User; token: string } {
+  // Find matching account by role
+  for (const storedUser of usersStore.values()) {
+    if (storedUser.role === role) {
+      const token = 'tok_' + crypto.randomBytes(24).toString('hex');
+      sessionsStore.set(token, storedUser.id);
+      const { passwordHash: _, salt: __, ...user } = storedUser;
+      return { user, token };
+    }
+  }
+
+  // Fallback if not found
+  const fallback = seedAccounts.find((a) => a.role === role) || seedAccounts[0];
+  const token = 'tok_' + crypto.randomBytes(24).toString('hex');
+  sessionsStore.set(token, fallback.id);
+  const { passwordHash: _, salt: __, ...user } = fallback;
   return { user, token };
 }
 
@@ -106,6 +127,16 @@ const seedAccounts: StoredUser[] = [
     salt: DEFAULT_SALT,
   },
   {
+    id: 'usr_hydrologist_2',
+    name: 'Dr. Ananya Sen',
+    email: 'ananya.sen@wihg.res.in',
+    role: 'hydrologist',
+    agency: 'Wadia Institute of Himalayan Geology',
+    assignedZone: 'All',
+    passwordHash: DEMO_HASH,
+    salt: DEFAULT_SALT,
+  },
+  {
     id: 'usr_engineer_1',
     name: 'Tashi Namgyal',
     email: 'iot@glacierguard.net',
@@ -116,9 +147,29 @@ const seedAccounts: StoredUser[] = [
     salt: DEFAULT_SALT,
   },
   {
+    id: 'usr_engineer_2',
+    name: 'Tashi Namgyal',
+    email: 'tashi.ops@glacierguard.org',
+    role: 'field_engineer',
+    agency: 'High Altitude Remote Sensor Ops',
+    assignedZone: 'Zone A',
+    passwordHash: DEMO_HASH,
+    salt: DEFAULT_SALT,
+  },
+  {
     id: 'usr_public_1',
     name: 'Pema Lepcha',
     email: 'resident@chungthang.in',
+    role: 'public',
+    agency: 'Chungthang Valley Community',
+    assignedZone: 'Zone A',
+    passwordHash: DEMO_HASH,
+    salt: DEFAULT_SALT,
+  },
+  {
+    id: 'usr_public_2',
+    name: 'Pema Lepcha',
+    email: 'pema.singtam@community.gov',
     role: 'public',
     agency: 'Chungthang Valley Community',
     assignedZone: 'Zone A',

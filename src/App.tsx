@@ -8,8 +8,11 @@ import { DebrisPredictView } from './components/DebrisPredictView';
 import { ImpactMapView } from './components/ImpactMapView';
 import { WarnEvacuateView } from './components/WarnEvacuateView';
 import { SatelliteView } from './components/SatelliteView';
+import { CitizenCommunityView } from './components/CitizenCommunityView';
 import { AuthModal } from './components/AuthModal';
+import { RoleStatusBar } from './components/RoleStatusBar';
 import { playEmergencySiren, stopEmergencySiren } from './utils/sirenAudio';
+import { SupportedLanguage } from './utils/translations';
 import {
   LiveSystemState,
   User,
@@ -301,18 +304,50 @@ function sanitizeSystemState(raw: any, current?: LiveSystemState): LiveSystemSta
     nodes: Array.isArray(target.nodes) && target.nodes.length > 0 ? target.nodes : base.nodes,
     activeAlerts: Array.isArray(target.activeAlerts) ? target.activeAlerts : base.activeAlerts,
     currentRiskScore: typeof target.currentRiskScore === 'number' ? target.currentRiskScore : base.currentRiskScore,
+    riskBand: target.riskBand || (
+      (typeof target.currentRiskScore === 'number' ? target.currentRiskScore : base.currentRiskScore) >= 80 ? 'CRITICAL' :
+      (typeof target.currentRiskScore === 'number' ? target.currentRiskScore : base.currentRiskScore) >= 60 ? 'HIGH' :
+      (typeof target.currentRiskScore === 'number' ? target.currentRiskScore : base.currentRiskScore) >= 30 ? 'MODERATE' : 'LOW'
+    ),
+    sirenActive: typeof target.sirenActive === 'boolean' ? target.sirenActive : base.sirenActive,
     currentScenario: target.currentScenario || base.currentScenario,
   };
 }
 
+const DEFAULT_USER: User = {
+  id: 'usr_commander_1',
+  name: 'Col. Rajesh Sharma',
+  email: 'commander@glacierguard.gov',
+  role: 'commander',
+  agency: 'State Disaster Management Authority (Sikkim)',
+  assignedZone: 'All',
+};
+
 export default function App() {
   const [systemState, setSystemState] = useState<LiveSystemState>(INITIAL_STATE);
-  const [activeTab, setActiveTab] = useState<TabType>('monitor');
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [activeTab, setActiveTab] = useState<TabType>('warn');
+  const [currentUser, setCurrentUser] = useState<User | null>(DEFAULT_USER);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [sirenActive, setSirenActive] = useState<boolean>(false);
   const [isLoadingAI, setIsLoadingAI] = useState<boolean>(false);
   const [sseConnected, setSseConnected] = useState<boolean>(false);
+  const [currentLang, setCurrentLang] = useState<SupportedLanguage>(() => {
+    const saved = localStorage.getItem('glacierguard_lang');
+    return (saved as SupportedLanguage) || 'en';
+  });
+
+  const handleLangChange = (lang: SupportedLanguage) => {
+    setCurrentLang(lang);
+    localStorage.setItem('glacierguard_lang', lang);
+  };
+
+  const handleToggleCitizenMode = () => {
+    if (activeTab === 'community') {
+      setActiveTab('warn');
+    } else {
+      setActiveTab('community');
+    }
+  };
 
   // Setup EventSource for Real-Time SSE stream
   useEffect(() => {
@@ -470,6 +505,15 @@ export default function App() {
   // Update Individual Sensor Telemetry
   const handleUpdateSensor = async (partial: Partial<SensorTelemetry>) => {
     try {
+      // Optimistically update telemetry locally first for instant slider movement
+      setSystemState((prev) => ({
+        ...prev,
+        telemetry: {
+          ...prev.telemetry,
+          ...partial,
+        },
+      }));
+
       const res = await fetch('/api/sensors/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -477,7 +521,18 @@ export default function App() {
       });
       if (res.ok) {
         const updated = await res.json();
-        setSystemState((prev) => sanitizeSystemState(updated, prev));
+        setSystemState((prev) => {
+          const sanitized = sanitizeSystemState(updated, prev);
+          // Sync audio siren state if server reports critical hazard
+          if (sanitized.sirenActive && !sirenActive) {
+            playEmergencySiren();
+            setSirenActive(true);
+          } else if (!sanitized.sirenActive && sirenActive && sanitized.currentRiskScore < 60) {
+            stopEmergencySiren();
+            setSirenActive(false);
+          }
+          return sanitized;
+        });
       }
     } catch (err) {
       console.error('Failed to update sensor values:', err);
@@ -621,6 +676,15 @@ export default function App() {
     const data = await res.json();
     localStorage.setItem('glacierguard_token', data.token);
     setCurrentUser(data.user);
+    if (data.user?.role === 'commander') {
+      setActiveTab('warn');
+    } else if (data.user?.role === 'hydrologist') {
+      setActiveTab('classify');
+    } else if (data.user?.role === 'field_engineer') {
+      setActiveTab('monitor');
+    } else if (data.user?.role === 'public') {
+      setActiveTab('community');
+    }
   };
 
   const handleRegister = async (email: string, pass: string, name: string, role: UserRole, agency?: string) => {
@@ -636,16 +700,84 @@ export default function App() {
     const data = await res.json();
     localStorage.setItem('glacierguard_token', data.token);
     setCurrentUser(data.user);
+    if (data.user?.role === 'commander') {
+      setActiveTab('warn');
+    } else if (data.user?.role === 'hydrologist') {
+      setActiveTab('classify');
+    } else if (data.user?.role === 'field_engineer') {
+      setActiveTab('monitor');
+    } else if (data.user?.role === 'public') {
+      setActiveTab('community');
+    }
   };
 
   const handleQuickLogin = async (role: UserRole) => {
-    const emailMap: Record<UserRole, string> = {
-      commander: 'commander@glacierguard.gov',
-      hydrologist: 'ananya.sen@wihg.res.in',
-      field_engineer: 'tashi.ops@glacierguard.org',
-      public: 'pema.singtam@community.gov',
+    // Direct guaranteed fallback mapping for all 4 roles
+    const fallbackUsers: Record<UserRole, User> = {
+      commander: {
+        id: 'usr_commander_1',
+        name: 'Col. Rajesh Sharma',
+        email: 'commander@glacierguard.gov',
+        role: 'commander',
+        agency: 'State Disaster Management Authority (Sikkim)',
+        assignedZone: 'All',
+      },
+      hydrologist: {
+        id: 'usr_hydrologist_1',
+        name: 'Dr. Ananya Sen',
+        email: 'scientist@glacierguard.org',
+        role: 'hydrologist',
+        agency: 'Wadia Institute of Himalayan Geology',
+        assignedZone: 'All',
+      },
+      field_engineer: {
+        id: 'usr_engineer_1',
+        name: 'Tashi Namgyal',
+        email: 'iot@glacierguard.net',
+        role: 'field_engineer',
+        agency: 'High Altitude Remote Sensor Ops',
+        assignedZone: 'Zone A',
+      },
+      public: {
+        id: 'usr_public_1',
+        name: 'Pema Lepcha',
+        email: 'resident@chungthang.in',
+        role: 'public',
+        agency: 'Chungthang Valley Community',
+        assignedZone: 'Zone A',
+      },
     };
-    await handleLogin(emailMap[role], 'GlacierGuard2026!');
+
+    let userToSet: User = fallbackUsers[role];
+    try {
+      const res = await fetch('/api/auth/demo-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        localStorage.setItem('glacierguard_token', data.token);
+        if (data.user) {
+          userToSet = data.user;
+        }
+      }
+    } catch (err) {
+      console.warn('API demo login error, using client fallback:', err);
+    }
+
+    setCurrentUser(userToSet);
+
+    // Controlled focus tab depending on role
+    if (role === 'commander') {
+      setActiveTab('warn');
+    } else if (role === 'hydrologist') {
+      setActiveTab('classify');
+    } else if (role === 'field_engineer') {
+      setActiveTab('monitor');
+    } else if (role === 'public') {
+      setActiveTab('community');
+    }
   };
 
   const handleLogout = async () => {
@@ -662,6 +794,7 @@ export default function App() {
     }
     localStorage.removeItem('glacierguard_token');
     setCurrentUser(null);
+    setActiveTab('monitor');
   };
 
   const currentRisk = systemState?.currentRiskScore ?? 12;
@@ -675,7 +808,7 @@ export default function App() {
   const safeAlerts = systemState?.activeAlerts ?? INITIAL_STATE.activeAlerts;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-white">
+    <div className="min-h-screen bg-[#F5F1E8] text-[#26352C] flex flex-col font-sans selection:bg-[#F47721] selection:text-white">
       {/* Top Navigation */}
       <Navbar
         systemState={systemState}
@@ -690,6 +823,10 @@ export default function App() {
         onToggleMute={handleToggleSiren}
         onQuickSwitchRole={handleQuickLogin}
         onResetToSafe={handleReset}
+        currentLang={currentLang}
+        onChangeLang={handleLangChange}
+        isCitizenMode={activeTab === 'community'}
+        onToggleCitizenMode={handleToggleCitizenMode}
       />
 
       {/* Live Demo Controller (Section 21 Hackathon Script) */}
@@ -700,20 +837,42 @@ export default function App() {
         onSelectTab={(tab) => setActiveTab(tab as TabType)}
       />
 
+      {/* Active Role Clearance & Role-Based Controlled Access Bar */}
+      <RoleStatusBar
+        currentUser={currentUser}
+        onSwitchRole={handleQuickLogin}
+      />
+
       {/* 6-Stage Workflow Navigation Tabs */}
       <WorkflowSteps
         activeTab={activeTab}
         onSelectTab={(tab) => setActiveTab(tab)}
         currentRiskScore={currentRisk}
+        currentUser={currentUser}
+        currentLang={currentLang}
       />
 
       {/* Main Active View Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+        {activeTab === 'community' && (
+          <CitizenCommunityView
+            systemState={systemState}
+            currentLang={currentLang}
+            onChangeLang={handleLangChange}
+            currentUser={currentUser}
+          />
+        )}
+
         {activeTab === 'monitor' && (
           <MonitorView
             telemetry={safeTelemetry}
             nodes={safeNodes}
             onUpdateSensor={handleUpdateSensor}
+            currentRiskScore={currentRisk}
+            riskBand={systemState.riskBand}
+            hazardType={systemState.hazardClassification.hazardType}
+            onResetToSafe={handleReset}
+            currentUser={currentUser}
           />
         )}
 
@@ -723,6 +882,7 @@ export default function App() {
             telemetry={safeTelemetry}
             onReanalyzeWithAI={handleReanalyzeWithAI}
             isLoadingAI={isLoadingAI}
+            currentUser={currentUser}
           />
         )}
 
@@ -731,6 +891,7 @@ export default function App() {
             debrisAssessment={safeDebris}
             zones={safeZones}
             onRecalculateDebris={handleRecalculateDebris}
+            currentUser={currentUser}
           />
         )}
 
@@ -740,6 +901,7 @@ export default function App() {
             nodes={safeNodes}
             currentRiskScore={currentRisk}
             debrisSeverity={safeDebris.severityLevel}
+            currentUser={currentUser}
           />
         )}
 
@@ -755,6 +917,7 @@ export default function App() {
             onToggleChannelFailure={handleToggleChannelFailure}
             onBroadcastAlert={handleBroadcastAlert}
             onGenerateAIAdvisory={handleGenerateAIAdvisory}
+            onOpenCalculator={() => setActiveTab('community')}
           />
         )}
 
@@ -762,32 +925,32 @@ export default function App() {
       </main>
 
       {/* Bottom Global Status Bar */}
-      <footer className="bg-slate-900 border-t border-slate-800/90 py-2.5 px-4 sm:px-6 lg:px-8 text-xs text-slate-400">
+      <footer className="bg-[#E9E2D5] border-t border-[#C9C0B1] py-2.5 px-4 sm:px-6 lg:px-8 text-xs text-[#657067]">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1.5 font-mono">
-              <span className={`w-2 h-2 rounded-full ${sseConnected ? 'bg-emerald-400' : 'bg-rose-400'}`}></span>
-              <span>{sseConnected ? 'SSE Live Stream Active' : 'Connecting to Stream...'}</span>
+            <span className="flex items-center gap-1.5 font-mono text-[#26352C]">
+              <span className={`w-2 h-2 rounded-full ${sseConnected ? 'bg-[#386B4A]' : 'bg-[#F47721]'}`}></span>
+              <span className="font-medium">{sseConnected ? 'SSE Live Stream Active' : 'Connecting to Stream...'}</span>
             </span>
-            <span className="text-slate-700">|</span>
-            <span>South Lhonak Glacial Lake (5,200m ASL)</span>
-            <span className="text-slate-700 hidden md:inline">|</span>
-            <span className="hidden md:inline">Teesta River Basin</span>
+            <span className="text-[#C9C0B1]">|</span>
+            <span className="text-[#26352C] font-medium">South Lhonak Glacial Lake (5,200m ASL)</span>
+            <span className="text-[#C9C0B1] hidden md:inline">|</span>
+            <span className="hidden md:inline text-[#657067]">Teesta River Basin</span>
           </div>
 
           <div className="flex items-center gap-4 text-[11px]">
             <span>
               Risk Level:{' '}
-              <strong className={currentRisk >= 80 ? 'text-rose-400' : currentRisk >= 40 ? 'text-amber-400' : 'text-emerald-400'}>
+              <strong className={currentRisk >= 80 ? 'text-[#F47721]' : currentRisk >= 40 ? 'text-[#737C45]' : 'text-[#386B4A]'}>
                 {currentRisk}/100
               </strong>
             </span>
             <span>
-              Debris Severity: <strong className="text-cyan-400">{systemState?.debrisAssessment?.severityLevel ?? 'LOW'}</strong>
+              Debris Severity: <strong className="text-[#244A38]">{systemState?.debrisAssessment?.severityLevel ?? 'LOW'}</strong>
             </span>
-            <span className="text-slate-600 hidden sm:inline">|</span>
-            <span className="text-slate-500 font-mono hidden sm:inline">
-              GlacierGuard AI v1.0 • NDMA & Sikkim SDMA
+            <span className="text-[#C9C0B1] hidden sm:inline">|</span>
+            <span className="text-[#657067] font-mono hidden sm:inline">
+              GlacierGuard AI • NDMA & Sikkim SDMA
             </span>
           </div>
         </div>

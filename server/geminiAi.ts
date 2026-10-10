@@ -22,65 +22,156 @@ function getGenAI(): GoogleGenAI | null {
 }
 
 /**
- * Fallback expert decision matrix based on GLOF science & South Lhonak case study
+ * Expert glaciological decision matrix based on GLOF science & South Lhonak benchmark
+ * Dynamically scales with every individual sensor parameter (lake rate of rise, water level, seismics, displacement, discharge)
  */
 export function calculateFallbackClassification(telemetry: SensorTelemetry): AIClassificationResult {
+  const rate = Number(telemetry.lakeRateOfRiseMetersPerHour) || 0;
+  const level = Number(telemetry.lakeWaterLevelMeters) || 32.4;
+  const richter = Number(telemetry.seismicMagnitudeRichter) || 0.8;
+  const rms = Number(telemetry.seismicVibrationRMS) || 0.05;
+  const disp = Number(telemetry.glacierDisplacementMmDay) || 18;
+  const discharge = Number(telemetry.riverDischargeM3s) || 180;
+  const precip = Number(telemetry.precipitationMmPerHour) || 0;
+  const hasDebris = Boolean(telemetry.cameraDebrisDetected);
+  const hasCalving = Boolean(telemetry.cameraCalvingDetected);
+
+  // 1. Lake Rate of Rise Component (0 to 65 pts)
+  // Baseline is ~0.04 m/hr. Every increment smoothly escalates risk
+  let lakeRiseScore = 0;
+  if (rate >= 2.5) {
+    lakeRiseScore = 55 + Math.min(10, (rate - 2.5) * 8); // 55 - 65 pts
+  } else if (rate >= 1.5) {
+    lakeRiseScore = 42 + ((rate - 1.5) / 1.0) * 13; // 42 - 55 pts
+  } else if (rate >= 0.8) {
+    lakeRiseScore = 28 + ((rate - 0.8) / 0.7) * 14; // 28 - 42 pts
+  } else if (rate >= 0.4) {
+    lakeRiseScore = 16 + ((rate - 0.4) / 0.4) * 12; // 16 - 28 pts
+  } else if (rate >= 0.15) {
+    lakeRiseScore = 6 + ((rate - 0.15) / 0.25) * 10; // 6 - 16 pts
+  } else if (rate > 0.04) {
+    lakeRiseScore = ((rate - 0.04) / 0.11) * 6; // 0 - 6 pts
+  }
+
+  // 2. Lake Water Level Component (0 to 25 pts)
+  // Baseline is 32.4m. Moraine freeboard margin is 38-40m. Above 40m is active overtopping breach.
+  let lakeLevelScore = 0;
+  if (level >= 41.0) {
+    lakeLevelScore = 25;
+  } else if (level >= 38.0) {
+    lakeLevelScore = 16 + ((level - 38.0) / 3.0) * 9;
+  } else if (level >= 35.0) {
+    lakeLevelScore = 8 + ((level - 35.0) / 3.0) * 8;
+  } else if (level >= 33.0) {
+    lakeLevelScore = 2 + ((level - 33.0) / 2.0) * 6;
+  }
+
+  // 3. Seismic & Moraine Vibration Component (0 to 25 pts)
+  // Baseline: 0.8 Richter, 0.05g RMS
+  let seismicScore = 0;
+  if (richter >= 3.8 || rms >= 0.55) {
+    seismicScore = 25;
+  } else if (richter >= 2.8 || rms >= 0.35) {
+    seismicScore = 18 + ((richter - 2.8) / 1.0) * 7;
+  } else if (richter >= 1.8 || rms >= 0.18) {
+    seismicScore = 9 + ((richter - 1.8) / 1.0) * 9;
+  } else if (richter >= 1.2 || rms >= 0.10) {
+    seismicScore = 3 + ((richter - 1.2) / 0.6) * 6;
+  }
+
+  // 4. Glacier Displacement Velocity (0 to 20 pts)
+  // Baseline: 18 mm/day. >100 is accelerating. >200 is rapid failure.
+  let dispScore = 0;
+  if (disp >= 250) {
+    dispScore = 20;
+  } else if (disp >= 140) {
+    dispScore = 13 + ((disp - 140) / 110) * 7;
+  } else if (disp >= 60) {
+    dispScore = 5 + ((disp - 60) / 80) * 8;
+  } else if (disp >= 30) {
+    dispScore = 1 + ((disp - 30) / 30) * 4;
+  }
+
+  // 5. Optical Edge Calving & Debris (0 to 15 pts)
+  let visualScore = 0;
+  if (hasDebris) visualScore += 8;
+  if (hasCalving) visualScore += 7;
+
+  // 6. Downstream River & Cloudburst Hydrology (0 to 15 pts)
+  let riverScore = 0;
+  if (discharge >= 3500) riverScore = 15;
+  else if (discharge >= 1800) riverScore = 10;
+  else if (discharge >= 600) riverScore = 5;
+  if (precip >= 35) riverScore += 3;
+
+  // Composite Risk Score (normalized 10 to 100)
+  const baseBaseline = 8;
+  const rawTotal = baseBaseline + lakeRiseScore + lakeLevelScore + seismicScore + dispScore + visualScore + riverScore;
+  const score = Math.max(10, Math.min(100, Math.round(rawTotal)));
+
+  // Risk Band
+  let riskBand: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL' = 'LOW';
+  if (score >= 80) riskBand = 'CRITICAL';
+  else if (score >= 60) riskBand = 'HIGH';
+  else if (score >= 30) riskBand = 'MODERATE';
+
+  // Determine Hazard Classification & Context
   let hazardType: HazardType = 'Normal / No Hazard';
-  let score = 12;
-  let confidence = 96;
   let precursor = 'Normal seasonal baseline ablation and meltwater discharge.';
   let chain = 'All upstream seismic, acoustic, optical, and lake-stage indicators are within safe thresholds.';
   let action = 'Maintain standard continuous 24/7 telemetry monitoring.';
-  let reasoning = 'No anomalous ground vibration (>1.2 Richter) or rapid lake level surge (>0.3 m/hr) observed.';
+  let reasoning = 'Sensors operating within allowable baseline deviations (<0.2 m/hr lake rise, <1.2 Richter tremors).';
+  let confidence = 94;
 
-  const isHighSeismic = telemetry.seismicMagnitudeRichter >= 2.5 || telemetry.seismicVibrationRMS >= 0.35;
-  const isSurgingLake = telemetry.lakeRateOfRiseMetersPerHour >= 0.8 || telemetry.lakeWaterLevelMeters >= 40.0;
-  const isGlacierMovingFast = telemetry.glacierDisplacementMmDay >= 120;
-  const isDebrisObserved = telemetry.cameraDebrisDetected || telemetry.cameraCalvingDetected;
-
-  if (isHighSeismic && isSurgingLake && isDebrisObserved) {
-    hazardType = 'E. Combined Multi-Hazard Event';
-    score = 94;
-    confidence = 92;
-    precursor = 'Large-scale lateral moraine failure coupled with serac ice calving directly into the proglacial lake.';
-    chain = 'Pre-event slope destabilization → Massive ice/rock displacement into lake → Displacement surge wave → Catastrophic moraine breach GLOF.';
-    action = 'IMMEDIATE RED ALERT: Activate valley-wide siren network, halt downstream hydropower turbines, and order mandatory evacuation to safe zones!';
-    reasoning = `Multi-sensor telemetry confirmed synchronous seismic spike (${telemetry.seismicMagnitudeRichter.toFixed(1)} Richter), extreme lake rate of rise (+${telemetry.lakeRateOfRiseMetersPerHour.toFixed(1)} m/hr), and optical detection of calving mass.`;
-  } else if (isSurgingLake && isDebrisObserved) {
-    hazardType = 'C. Glacial Lake Outburst Flood (GLOF)';
-    score = 86;
-    confidence = 90;
-    precursor = 'Rapid moraine dam breach or subglacial drainage tunnel collapse.';
-    chain = 'Internal piping or hydrostatic pressure exceeding moraine shear strength → Moraine breach → High-velocity outburst.';
-    action = 'HIGH ALERT: Evacuate Zone A immediately and alert Zone B/C response personnel.';
-    reasoning = `Lake water level rapidly fluctuating with heavy discharge rise to ${telemetry.riverDischargeM3s} m³/s.`;
-  } else if (isHighSeismic && isDebrisObserved && !isSurgingLake) {
-    hazardType = 'B. Landslide Entering Glacial Lake';
-    score = 75;
-    confidence = 88;
-    precursor = 'Steep lateral moraine/bedrock slope failure along the glacier flank.';
-    chain = 'Ground instability trigger → Landslide mass entering lake basin → Threat of seiche/impulse wave overtopping moraine.';
-    action = 'ORANGE WARNING: Prepare immediate evacuation routes in Zone A. Continuous visual/seismic tracking.';
-    reasoning = `High seismic acceleration (${telemetry.seismicVibrationRMS.toFixed(2)}g) alongside optical detection of mass slope movement.`;
-  } else if (isGlacierMovingFast && telemetry.cameraCalvingDetected) {
-    hazardType = 'A. Glacier / Ice Collapse';
-    score = 62;
-    confidence = 85;
-    precursor = 'Hanging glacier / ice tongue detachment due to thermal degradation.';
-    chain = 'Thermal warming (Freezing line ${telemetry.freezingLevelMeters}m) → Basal lubricated slide → Serac toppling.';
-    action = 'YELLOW ADVISORY: Restrict high-altitude grazing and riverbed civil works.';
-    reasoning = `Glacier velocity accelerated to ${telemetry.glacierDisplacementMmDay} mm/day under elevated temperatures.`;
-  } else if (telemetry.riverDischargeM3s >= 1200 || (isDebrisObserved && telemetry.riverStageMeters >= 9)) {
-    hazardType = 'D. Ice / Debris Flow';
-    score = 79;
-    confidence = 87;
-    precursor = 'Intense headwater erosion mobilizing glacial till and permafrost debris.';
-    chain = 'Heavy rainfall (${telemetry.precipitationMmPerHour} mm/hr) + meltwater → Channel scouring → Dense granular debris surge.';
-    action = 'HIGH ALERT: Clear all river bridges and low-lying highway corridors.';
-    reasoning = `Downstream river stage reached ${telemetry.riverStageMeters.toFixed(1)}m with heavy bedload transport.`;
+  if (score >= 80) {
+    if (richter >= 2.5 && (hasCalving || hasDebris || rate >= 1.5)) {
+      hazardType = 'E. Combined Multi-Hazard Event';
+      precursor = 'Massive slope collapse and serac detachment impacting surging proglacial lake.';
+      chain = 'Slope failure → Impulse displacement wave → Moraine dam overtopping & catastrophic canyon outburst.';
+      action = 'MANDATORY RED ALERT: Trigger 130dB sirens, halt all valley hydropower intakes, and execute emergency ridge evacuations!';
+      reasoning = `Synchronous catastrophic signals: lake rising at +${rate.toFixed(2)} m/hr, ground tremors at ${richter.toFixed(1)} Richter, and active debris entrainment.`;
+    } else {
+      hazardType = 'C. Glacial Lake Outburst Flood (GLOF)';
+      precursor = 'Catastrophic moraine dam failure or hydrostatic overtopping breach.';
+      chain = 'Critical water surge volume exceeding moraine dam structural shear strength → Rapid crest breach → Massive downstream floodwave.';
+      action = 'RED ALERT: Evacuate Zone A (Chungthang) immediately! Alert Dikchu and Singtam disaster response units.';
+      reasoning = `Extreme proglacial lake expansion: water stage at ${level.toFixed(1)}m surging at +${rate.toFixed(2)} m/hr.`;
+    }
+  } else if (score >= 60) {
+    if (richter >= 2.5) {
+      hazardType = 'B. Landslide Entering Glacial Lake';
+      precursor = 'Lateral moraine wall destabilization and fracturing above lake basin.';
+      chain = 'Sub-surface shear failure → Rockmass plunge into lake basin → Severe displacement wave threat.';
+      action = 'ORANGE WARNING: Pre-alert Chungthang disaster response. Restrict riverbed traffic and clear low-lying bridges.';
+      reasoning = `High seismic acceleration (${rms.toFixed(2)}g / ${richter.toFixed(1)} Richter) paired with accelerated slope creep.`;
+    } else if (hasDebris || discharge >= 1500) {
+      hazardType = 'D. Ice / Debris Flow';
+      precursor = 'High-density sediment mobilization and glacial till scouring.';
+      chain = 'High-velocity melt surge → Moraine till scouring → Bulking into dense debris torrent.';
+      action = 'HIGH WARNING: Clear riverbanks, suspension bridges, and downstream hydropower discharge zones.';
+      reasoning = `Downstream river discharge surging to ${discharge} m³/s with active bedload transport.`;
+    } else {
+      hazardType = 'C. Glacial Lake Outburst Flood (GLOF)';
+      precursor = 'Accelerated proglacial lake volume expansion approaching dam freeboard.';
+      chain = 'Sustained thermal melt surge → Lake stage elevation (+${rate.toFixed(2)} m/hr) → Hydrostatic loading on moraine.';
+      action = 'HIGH ADVISORY: Stage evacuation teams and prepare high-ground shelters along Route Alpha.';
+      reasoning = `Lake water level (${level.toFixed(1)}m) and rise rate (+${rate.toFixed(2)} m/hr) entering hazardous territory.`;
+    }
+  } else if (score >= 30) {
+    if (disp >= 70 || hasCalving) {
+      hazardType = 'A. Glacier / Ice Collapse';
+      precursor = 'Hanging serac glacier snout detachment and thermal sliding.';
+      chain = 'Thermal meltwater lubricating glacier bed → Surface creep (${disp} mm/day) → Serac fracture.';
+      action = 'YELLOW ADVISORY: Restrict high-altitude climbing and monitor lake stage continuously.';
+      reasoning = `Glacier surface velocity elevated to ${disp} mm/day with thermal ice calving.`;
+    } else {
+      hazardType = 'C. Glacial Lake Outburst Flood (GLOF)';
+      precursor = 'Elevated proglacial meltwater accumulation and positive rise rate.';
+      chain = 'Meltwater influx → Lake water level rising at +${rate.toFixed(2)} m/hr → Elevated moraine hydrostatic pressure.';
+      action = 'ELEVATED MONITORING: Increase telemetry sample rate to 10 seconds. Verify LoRa and siren communication links.';
+      reasoning = `Lake rate of rise is +${rate.toFixed(2)} m/hr (above baseline threshold of 0.10 m/hr).`;
+    }
   }
-
-  const riskBand = score >= 81 ? 'CRITICAL' : score >= 61 ? 'HIGH' : score >= 31 ? 'MODERATE' : 'LOW';
 
   return {
     hazardType,

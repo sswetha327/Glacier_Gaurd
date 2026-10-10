@@ -10,13 +10,14 @@ import {
   Info,
   Navigation,
 } from 'lucide-react';
-import { HazardZoneImpact, ESP32NodeStatus } from '../types';
+import { HazardZoneImpact, ESP32NodeStatus, User } from '../types';
 
 interface ImpactMapViewProps {
   zones: HazardZoneImpact[];
   nodes: ESP32NodeStatus[];
   currentRiskScore: number;
   debrisSeverity: string;
+  currentUser?: User | null;
 }
 
 export const ImpactMapView: React.FC<ImpactMapViewProps> = ({
@@ -24,10 +25,12 @@ export const ImpactMapView: React.FC<ImpactMapViewProps> = ({
   nodes,
   currentRiskScore,
   debrisSeverity,
+  currentUser,
 }) => {
   const [selectedElement, setSelectedElement] = useState<string | null>('source');
   const isSurging = currentRiskScore >= 60;
   const isCritical = currentRiskScore >= 80;
+  const role = currentUser?.role || 'commander';
 
   return (
     <div className="space-y-6">
@@ -35,14 +38,31 @@ export const ImpactMapView: React.FC<ImpactMapViewProps> = ({
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-cyan-950 text-cyan-400 border border-cyan-800">
                 TOPOGRAPHIC IMPACT MAP
+              </span>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase ${
+                role === 'public'
+                  ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                  : role === 'field_engineer'
+                  ? 'bg-amber-950 text-amber-300 border-amber-800'
+                  : role === 'hydrologist'
+                  ? 'bg-purple-950 text-purple-300 border-purple-800'
+                  : 'bg-rose-950 text-rose-300 border-rose-800'
+              }`}>
+                {role === 'public' ? 'CITIZEN ESCAPE CORRIDORS' : role === 'field_engineer' ? 'IOT SENSOR DEPLOYMENTS' : role === 'hydrologist' ? 'HYDRODYNAMIC TRANSECT' : 'INCIDENT COMMAND MAP'}
               </span>
               <h2 className="text-lg font-bold text-white">Teesta Basin Glacier-to-Valley Flow Corridor</h2>
             </div>
             <p className="text-sm text-slate-400 mt-1">
-              Topographic elevation profile from South Lhonak proglacial lake (5,200m ASL) down through the steep canyon to Singtam floodplain (350m ASL).
+              {role === 'public'
+                ? 'Valley safety view: Identifies your local township, distance to flood path, and marked uphill escape routes to high ground away from the Teesta riverbed.'
+                : role === 'field_engineer'
+                ? 'Sensor network GIS: Shows high-altitude ESP32 edge telemetry nodes, LoRa mesh gateways, and acoustic siren relay locations from 5,200m down to Singtam.'
+                : role === 'hydrologist'
+                ? 'Hydro-dynamic transect: Topographic elevation profile from South Lhonak proglacial lake (5,200m) down to Singtam floodplain (350m ASL).'
+                : 'Topographic elevation profile from South Lhonak proglacial lake (5,200m ASL) down through the steep canyon to Singtam floodplain (350m ASL).'}
             </p>
           </div>
 

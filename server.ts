@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
-import { registerUser, loginUser, getUserByToken, logoutUser } from './server/auth';
+import { registerUser, loginUser, getUserByToken, logoutUser, demoLogin } from './server/auth';
 import { glacierManager, addSseClient } from './server/glacierState';
 import { classifyHazardEventWithGemini, generateActionableWarningMessage } from './server/geminiAi';
 import { SensorTelemetry } from './src/types';
@@ -56,6 +56,19 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
     res.json(result);
   } catch (err: any) {
     res.status(401).json({ error: err.message || 'Authentication failed.' });
+  }
+});
+
+app.post('/api/auth/demo-login', (req: Request, res: Response) => {
+  try {
+    const { role } = req.body;
+    if (!role) {
+      return res.status(400).json({ error: 'Role is required for demo login.' });
+    }
+    const result = demoLogin(role);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Demo login failed.' });
   }
 });
 

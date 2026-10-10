@@ -12,7 +12,7 @@ import {
   RockingChair as RockIcon, // or custom icon representation
   Layers,
 } from 'lucide-react';
-import { DebrisFlowAssessment, HazardZoneImpact } from '../types';
+import { DebrisFlowAssessment, HazardZoneImpact, User } from '../types';
 
 interface DebrisPredictViewProps {
   debrisAssessment: DebrisFlowAssessment;
@@ -23,13 +23,32 @@ interface DebrisPredictViewProps {
     averageSlopeDegrees: number;
     peakDischargeM3s: number;
   }) => void;
+  currentUser?: User | null;
 }
 
 export const DebrisPredictView: React.FC<DebrisPredictViewProps> = ({
   debrisAssessment,
   zones,
   onRecalculateDebris,
+  currentUser,
 }) => {
+  const isHydrologist = currentUser?.role === 'hydrologist';
+  const isCommander = currentUser?.role === 'commander';
+  const isCitizen = currentUser?.role === 'public';
+
+  const [tuningVol, setTuningVol] = React.useState(debrisAssessment.waterVolumeMillionM3);
+  const [tuningSolid, setTuningSolid] = React.useState(debrisAssessment.solidFractionPercent);
+  const [tuningSlope, setTuningSlope] = React.useState(debrisAssessment.averageSlopeDegrees);
+  const [tuningDischarge, setTuningDischarge] = React.useState(debrisAssessment.estimatedPeakDischargeM3s);
+
+  const handleApplyPhysics = () => {
+    onRecalculateDebris({
+      waterVolumeMillionM3: tuningVol,
+      solidFractionPercent: tuningSolid,
+      averageSlopeDegrees: tuningSlope,
+      peakDischargeM3s: tuningDischarge,
+    });
+  };
   const getSeverityBadge = (level: DebrisFlowAssessment['severityLevel']) => {
     switch (level) {
       case 'EXTREME':
@@ -156,6 +175,109 @@ export const DebrisPredictView: React.FC<DebrisPredictViewProps> = ({
           <strong className="text-slate-200">Impact Assessment: </strong>
           {debrisAssessment.description}
         </p>
+
+        {/* Role-Specific Physics Workbench */}
+        {isHydrologist ? (
+          <div className="mt-5 p-4 rounded-xl bg-purple-950/30 border border-purple-800/80 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-purple-400 animate-pulse"></span>
+                <span className="text-xs font-bold text-purple-200 uppercase tracking-wider">
+                  WIHG Scientific Hydrology Workbench (Hydrologist Clearance)
+                </span>
+              </div>
+              <span className="text-[10px] font-mono text-purple-300 bg-purple-950 px-2 py-0.5 rounded border border-purple-800">
+                Non-Newtonian Bingham Fluid Calibration
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-1">
+              <div className="bg-slate-950/80 p-3 rounded-lg border border-slate-800">
+                <label className="text-xs font-medium text-slate-300 flex justify-between">
+                  <span>Water Volume (M m³):</span>
+                  <span className="text-cyan-400 font-mono font-bold">{tuningVol.toFixed(1)}</span>
+                </label>
+                <input
+                  type="range"
+                  min="2"
+                  max="30"
+                  step="0.5"
+                  value={tuningVol}
+                  onChange={(e) => setTuningVol(parseFloat(e.target.value))}
+                  className="w-full mt-2 accent-cyan-500 cursor-pointer"
+                />
+              </div>
+
+              <div className="bg-slate-950/80 p-3 rounded-lg border border-slate-800">
+                <label className="text-xs font-medium text-slate-300 flex justify-between">
+                  <span>Solid Fraction (%):</span>
+                  <span className="text-amber-400 font-mono font-bold">{tuningSolid}%</span>
+                </label>
+                <input
+                  type="range"
+                  min="10"
+                  max="70"
+                  step="2"
+                  value={tuningSolid}
+                  onChange={(e) => setTuningSolid(parseInt(e.target.value, 10))}
+                  className="w-full mt-2 accent-amber-500 cursor-pointer"
+                />
+              </div>
+
+              <div className="bg-slate-950/80 p-3 rounded-lg border border-slate-800">
+                <label className="text-xs font-medium text-slate-300 flex justify-between">
+                  <span>Bed Slope (°):</span>
+                  <span className="text-purple-400 font-mono font-bold">{tuningSlope.toFixed(1)}°</span>
+                </label>
+                <input
+                  type="range"
+                  min="8"
+                  max="35"
+                  step="0.5"
+                  value={tuningSlope}
+                  onChange={(e) => setTuningSlope(parseFloat(e.target.value))}
+                  className="w-full mt-2 accent-purple-500 cursor-pointer"
+                />
+              </div>
+
+              <div className="bg-slate-950/80 p-3 rounded-lg border border-slate-800">
+                <label className="text-xs font-medium text-slate-300 flex justify-between">
+                  <span>Peak Discharge (m³/s):</span>
+                  <span className="text-rose-400 font-mono font-bold">{tuningDischarge}</span>
+                </label>
+                <input
+                  type="range"
+                  min="500"
+                  max="6000"
+                  step="100"
+                  value={tuningDischarge}
+                  onChange={(e) => setTuningDischarge(parseInt(e.target.value, 10))}
+                  className="w-full mt-2 accent-rose-500 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={handleApplyPhysics}
+                className="px-4 py-2 rounded-lg text-xs font-bold bg-purple-600 hover:bg-purple-500 text-white shadow-md shadow-purple-950 transition-colors"
+              >
+                Apply Hydro-Physics Parameters & Recalculate
+              </button>
+            </div>
+          </div>
+        ) : isCitizen ? (
+          <div className="mt-4 p-3 bg-slate-950/60 rounded-lg border border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+            <span>Verified Glaciological Parameters: Calibrated by Wadia Institute of Himalayan Geology.</span>
+            <span className="text-[10px] text-emerald-400 font-semibold uppercase">Civilian Informational Mode</span>
+          </div>
+        ) : (
+          <div className="mt-4 p-3 bg-slate-950/60 rounded-lg border border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+            <span>Hydro-physical formulas locked to WIHG Scientific Analyst. Incident Commanders receive aggregate breach depth forecasts below.</span>
+            <span className="text-[10px] text-cyan-400 font-semibold uppercase">{currentUser?.role?.toUpperCase()} VIEW</span>
+          </div>
+        )}
       </div>
 
       {/* Downstream Impact Zones & Time-to-Impact (TTI) */}
